@@ -181,7 +181,7 @@ class AppointmentCreateView(APIView):
         )
 
         try:
-            patient = Patient.objects.get(user=request.user)
+            patient = Patient.objects.select_related("user").get(user=request.user)
         except Patient.DoesNotExist:
             return Response(
                 {"status": False, "message": "El usuario no es un paciente válido."},
@@ -200,27 +200,26 @@ class AppointmentCreateView(APIView):
                     start_time=serializer.validated_data["start_time"],
                     end_time=serializer.validated_data["end_time"],
                 )
-
-                send_mail(
-                    subject="Nueva solicitud de hora médica",
-                    message=(
-                        f"Se ha solicitado una nueva hora médica.\n\n"
-                        f"Paciente: {patient.user.get_full_name()}\n"
-                        f"Correo paciente: {patient.user.email}\n"
-                        f"Teléfono: {patient.phone_number}\n\n"
-                        f"Fecha: {appointment.date}\n"
-                        f"Hora: {appointment.start_time} - {appointment.end_time}\n"
-                    ),
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[kinesiologist.user.email],
-                    fail_silently=False,
-                )
-
         except IntegrityError:
             return Response(
                 {"status": False, "message": "No se pudo crear la cita."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+        send_mail(
+            subject="📅 Nueva solicitud de cita",
+            message=(
+                f"Hola {kinesiologist.user.get_full_name()},\n\n"
+                f"El paciente {patient.user.get_full_name()} ha solicitado una cita.\n\n"
+                f"📅 Fecha: {appointment.date}\n"
+                f"⏰ Hora: {appointment.start_time} - {appointment.end_time}\n\n"
+                f"Por favor ingresa al panel para confirmar o rechazar la cita."
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[kinesiologist.user.email],
+            fail_silently=False,
+        )
 
         return Response(
             {
@@ -358,7 +357,7 @@ class AppointmentStatusView(APIView):
         appointment = get_object_or_404(
             Appointment.objects.select_related(
                 "kinesiologist__user",
-                "patient_name__user",  
+                "patient_name__user"
             ),
             id=appointment_id
         )
@@ -369,22 +368,43 @@ class AppointmentStatusView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        print("EMAIL PACIENTE:", appointment.patient_name.user.email)
-
         new_status = request.data.get("status")
         if new_status not in ["confirmed", "cancelled"]:
             return Response(
-                {"status": False, "message": "Estado inválido. Use 'confirmed' o 'cancelled'."},
+                {"status": False, "message": "Estado inválido"},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
         appointment.status = new_status
         appointment.save(update_fields=["status"])
 
+        patient_user = appointment.patient_name.user
+        kine_user = appointment.kinesiologist.user
+
+        status_label = "CONFIRMADA ✅" if new_status == "confirmed" else "CANCELADA ❌"
+
+        send_mail(
+            subject=f"📅 Tu cita ha sido {status_label}",
+            message=(
+                f"Hola {patient_user.get_full_name()},\n\n"
+                f"Tu cita con {kine_user.get_full_name()} ha sido {status_label}.\n\n"
+                f"📅 Fecha: {appointment.date}\n"
+                f"⏰ Hora: {appointment.start_time} - {appointment.end_time}\n\n"
+                f"Gracias por usar Centro de Salud y Bienestar."
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[patient_user.email],
+            fail_silently=False,
+        )
+
         return Response(
-            {"status": True, "message": f"Cita {appointment.get_status_display()}"},
+            {
+                "status": True,
+                "message": f"Cita {appointment.get_status_display()}",
+            },
             status=status.HTTP_200_OK
         )
+
 
 
 

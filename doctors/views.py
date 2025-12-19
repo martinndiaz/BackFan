@@ -15,7 +15,6 @@ class KinesiologistListCreateView(APIView):
     authentication_classes = [TokenAuthentication]
 
     def get_permissions(self):
-        # GET público, resto privado
         if self.request.method == "GET":
             return [AllowAny()]
         return [IsAuthenticated()]
@@ -83,13 +82,12 @@ def kinesiologist_profile(request):
         )
 
     if request.method == "GET":
-        # Serializador ya debería incluir email desde user (si no, lo agregamos)
+       
         data = KinesiologistSerializer(kine).data
-        # Asegurar campos mínimos que el front usa
         data.setdefault("email", getattr(request.user, "email", ""))
         return Response(data, status=status.HTTP_200_OK)
 
-    # PUT (partial update)
+   
     kine.name = request.data.get("name", kine.name)
     kine.phone_number = request.data.get("phone_number", kine.phone_number)
     kine.specialty = request.data.get("specialty", kine.specialty)
@@ -97,7 +95,7 @@ def kinesiologist_profile(request):
     kine.image_url = request.data.get("image_url", kine.image_url)
     kine.save()
 
-    # También permitir actualizar el email del user
+   
     new_email = request.data.get("email", None)
     if new_email is not None:
         request.user.email = new_email
